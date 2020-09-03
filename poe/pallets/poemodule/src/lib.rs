@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::{
-    decl_module, decl_storage, decl_event, decl_error, ensure, StorageMap
+    decl_module, decl_storage, decl_event, decl_error, ensure, StorageMap,dispatch::DispatchResult
 };
 use frame_system::ensure_signed;
 use sp_std::vec::Vec;
@@ -35,12 +35,9 @@ decl_storage! {
 // https://substrate.dev/docs/en/knowledgebase/runtime/events
 decl_event!(
 	pub enum Event<T> where AccountId = <T as frame_system::Trait>::AccountId {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
-		/// Event emitted when a proof has been claimed. [who, claim]
         ClaimCreated(AccountId, Vec<u8>),
-        /// Event emitted when a claim is revoked by the owner. [who, claim]
         ClaimRevoked(AccountId, Vec<u8>),
+        ClaimTransfer(AccountId,AccountId,Vec<u8>), 
 	}
 );
 
@@ -114,5 +111,29 @@ decl_module! {
             // Emit an event that the claim was erased.
             Self::deposit_event(RawEvent::ClaimRevoked(sender, proof));
         }
+
+        #[weight = 10_000]
+        fn transfer_claim(origin, to: T::AccountId, proof: Vec<u8>)->DispatchResult{
+            let sender = ensure_signed(origin)?;
+
+            ensure!(Proofs::<T>::contains_key(&proof), Error::<T>::NoSuchProof);
+            let (owner, _) = Proofs::<T>::get(&proof);
+            ensure!(sender == owner, Error::<T>::NotProofOwner);
+            Proofs::<T>::remove(&proof);
+
+            Self::_transfer(sender,to, proof)
+            
+        }
+        
+    }
+}
+impl<T: Trait> Module<T> {
+    fn _transfer(from: T::AccountId, to: T::AccountId, proof: Vec<u8>)->DispatchResult{
+        
+        let current_block = <frame_system::Module<T>>::block_number();
+        // Store the proof with the to and block number.
+        Proofs::<T>::insert(&proof, (&to, current_block));
+        Self::deposit_event(RawEvent::ClaimTransfer(from, to, proof));
+        Ok(())
     }
 }
